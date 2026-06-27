@@ -1,4 +1,4 @@
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { NextRequest } from "next/server";
 import { supabase } from "./supabase";
 import { ApiError, Errors } from "./errors";
@@ -28,11 +28,6 @@ export async function hashApiKey(key: string): Promise<string> {
  * @deprecated Use hashApiKey instead
  */
 export function hashApiKeySync(key: string): string {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(key);
-  // Use Node.js crypto for sync operations as fallback
-  // This is only for backward compatibility during migration
-  const { createHash } = require("crypto");
   return createHash("sha256").update(key).digest("hex");
 }
 
@@ -54,12 +49,60 @@ export interface ApiKeyMetadata {
   expires_at: string | null;
 }
 
+interface AgentRow extends ApiKeyMetadata {
+  id: string;
+  name: string;
+  display_name: string;
+}
+
+interface AgentLookupError {
+  code?: string;
+  message?: string;
+}
+
 /**
  * Check if API key has expired
  */
 function isKeyExpired(metadata: ApiKeyMetadata | null): boolean {
   if (!metadata?.expires_at) return false;
   return new Date(metadata.expires_at) < new Date();
+}
+
+function isMissingExpiresAtColumn(error: AgentLookupError | null): boolean {
+  return (
+    error?.code === "42703" ||
+    Boolean(error?.message?.toLowerCase().includes("expires_at"))
+  );
+}
+
+async function findAgentByKeyHash(
+  keyHash: string
+): Promise<{ data: AgentRow | null; error: AgentLookupError | null }> {
+  const withExpiry = await supabase
+    .from("ocp_agents")
+    .select("id, name, display_name, created_at, expires_at")
+    .eq("api_key_hash", keyHash)
+    .single();
+
+  if (!isMissingExpiresAtColumn(withExpiry.error)) {
+    return {
+      data: withExpiry.data as AgentRow | null,
+      error: withExpiry.error,
+    };
+  }
+
+  const withoutExpiry = await supabase
+    .from("ocp_agents")
+    .select("id, name, display_name, created_at")
+    .eq("api_key_hash", keyHash)
+    .single();
+
+  return {
+    data: withoutExpiry.data
+      ? ({ ...withoutExpiry.data, expires_at: null } as AgentRow)
+      : null,
+    error: withoutExpiry.error,
+  };
 }
 
 /**
@@ -77,11 +120,7 @@ export async function authenticate(
   const apiKey = authHeader.slice(7);
   const keyHash = await hashApiKey(apiKey);
 
-  const { data: agent, error } = await supabase
-    .from("ocp_agents")
-    .select("id, name, display_name, created_at, expires_at")
-    .eq("api_key_hash", keyHash)
-    .single();
+  const { data: agent, error } = await findAgentByKeyHash(keyHash);
 
   if (error || !agent) {
     throw Errors.UNAUTHORIZED;
@@ -119,11 +158,7 @@ export async function verifyApiKey(
 ): Promise<AuthenticatedAgent | null> {
   const keyHash = await hashApiKey(apiKey);
 
-  const { data: agent, error } = await supabase
-    .from("ocp_agents")
-    .select("id, name, display_name, created_at, expires_at")
-    .eq("api_key_hash", keyHash)
-    .single();
+  const { data: agent, error } = await findAgentByKeyHash(keyHash);
 
   if (error || !agent) {
     return null;
