@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { buildCompatibilityPrompt } from "../compatibility";
+import {
+  buildCompatibilityPrompt,
+  parseCompatibilityJson,
+} from "../compatibility";
 
 describe("buildCompatibilityPrompt", () => {
   it("builds a prompt from two agent profiles", () => {
@@ -23,5 +26,40 @@ describe("buildCompatibilityPrompt", () => {
     expect(prompt).toContain("agent-b");
     expect(prompt).toContain("security");
     expect(prompt).toContain("innovation");
+  });
+});
+
+describe("parseCompatibilityJson", () => {
+  it("parses fenced JSON responses", () => {
+    const result = parseCompatibilityJson(`\`\`\`json
+{"score": 87, "summary": "Strong value alignment and complementary skills."}
+\`\`\``);
+
+    expect(result).toEqual({
+      score: 87,
+      summary: "Strong value alignment and complementary skills.",
+    });
+  });
+
+  it("extracts a JSON object from surrounding text", () => {
+    const result = parseCompatibilityJson(
+      `Result: {"score": 101, "summary": "High potential."}`
+    );
+
+    expect(result).toEqual({
+      score: 100,
+      summary: "High potential.",
+    });
+  });
+
+  it("preserves zero as a valid score", () => {
+    const result = parseCompatibilityJson(
+      `{"score": 0, "summary": "No practical overlap."}`
+    );
+
+    expect(result).toEqual({
+      score: 0,
+      summary: "No practical overlap.",
+    });
   });
 });
