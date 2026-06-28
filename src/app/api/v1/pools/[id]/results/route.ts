@@ -3,6 +3,11 @@ import { supabase } from "@/lib/supabase";
 import { authenticate } from "@/lib/auth";
 import { ApiError, errorResponse, Errors } from "@/lib/errors";
 
+interface MatchResult {
+  agent_a: string;
+  agent_b: string;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -27,7 +32,7 @@ export async function GET(
       .eq("pool_id", id);
 
     const myMatches = (matches || []).filter(
-      (m: any) => m.agent_a === agent.id || m.agent_b === agent.id
+      (m: MatchResult) => m.agent_a === agent.id || m.agent_b === agent.id
     );
 
     return NextResponse.json({ all_matches: matches || [], my_matches: myMatches });

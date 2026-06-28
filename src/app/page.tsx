@@ -19,7 +19,7 @@ async function getStats() {
     // Get member counts for active pools
     const activePools = poolsResult.data || [];
     const poolIds = activePools.map((p) => p.id);
-    let memberCounts: Record<string, number> = {};
+    const memberCounts: Record<string, number> = {};
     if (poolIds.length > 0) {
       const { data: members } = await supabase
         .from("ocp_pool_members")
